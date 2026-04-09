@@ -11,78 +11,80 @@ export default function BalancePanel({ people, balances, personById }) {
   }
 
   const sorted = [...people].sort((a, b) => (balances[b.id] ?? 0) - (balances[a.id] ?? 0))
-  const total = Object.values(balances).reduce((s, v) => s + Math.abs(v), 0)
-
+  const maxAbs = Math.max(...sorted.map((p) => Math.abs(balances[p.id] ?? 0)), 0.01)
   const allSettled = sorted.every((p) => Math.abs(balances[p.id] ?? 0) < 0.005)
 
   return (
     <div>
       <SectionHeader
         title="Balances"
-        subtitle={allSettled ? 'All settled up! 🎉' : 'Who owes whom at a glance'}
+        subtitle={allSettled ? 'Everyone is settled up!' : 'Net balance for each member'}
       />
 
       {allSettled ? (
-        <div style={styles.settled}>
-          <div style={{ fontSize: 48, marginBottom: 12 }}>🎉</div>
-          <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--green)', marginBottom: 6 }}>
-            All Settled!
-          </p>
-          <p style={{ fontSize: 14, color: 'var(--text-muted)' }}>
-            No outstanding balances. Everyone's square.
-          </p>
+        <div style={styles.settledBox}>
+          <div style={styles.settledEmoji}>🎉</div>
+          <p style={styles.settledTitle}>All Settled!</p>
+          <p style={styles.settledSub}>No outstanding balances. Everyone's square.</p>
         </div>
       ) : (
-        <>
-          <div style={styles.cards}>
-            {sorted.map((p) => {
-              const bal = balances[p.id] ?? 0
-              const pct = total > 0 ? Math.abs(bal) / (total / 2) : 0
-              return <BalanceCard key={p.id} person={p} balance={bal} pct={Math.min(pct, 1)} />
-            })}
-          </div>
-
-          <div style={styles.legend}>
-            <span style={{ color: 'var(--green)', fontWeight: 600 }}>■ Gets back</span>
-            <span style={{ color: 'var(--red)', fontWeight: 600 }}>■ Owes</span>
-          </div>
-        </>
+        <div style={styles.cards}>
+          {sorted.map((p) => {
+            const bal = balances[p.id] ?? 0
+            const pct = Math.abs(bal) / maxAbs
+            const isPos = bal > 0.005
+            const isNeg = bal < -0.005
+            return <BalanceCard key={p.id} person={p} balance={bal} pct={pct} isPos={isPos} isNeg={isNeg} />
+          })}
+        </div>
       )}
     </div>
   )
 }
 
-function BalanceCard({ person, balance, pct }) {
-  const isPositive = balance >= 0
-  const color = isPositive ? 'var(--green)' : 'var(--red)'
-  const dimColor = isPositive ? 'var(--green-dim)' : 'var(--red-dim)'
-  const label = isPositive ? 'gets back' : 'owes'
+function BalanceCard({ person, balance, pct, isPos, isNeg }) {
+  const color = isPos ? 'var(--green)' : isNeg ? 'var(--red)' : 'var(--text-muted)'
+  const gradStart = isPos ? '#34d399' : isNeg ? '#f87171' : '#4b5563'
+  const gradEnd = isPos ? '#6ee7b7' : isNeg ? '#fca5a5' : '#6b7280'
+  const dimBg = isPos ? 'var(--green-dim)' : isNeg ? 'var(--red-dim)' : 'rgba(255,255,255,0.03)'
+  const label = isPos ? 'gets back' : isNeg ? 'owes' : 'settled'
 
   return (
     <div style={styles.card}>
-      <div style={styles.cardLeft}>
-        <Avatar name={person.name} />
-        <div>
-          <div style={styles.name}>{person.name}</div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-            {Math.abs(balance) < 0.005
-              ? 'All settled'
-              : `${label} $${Math.abs(balance).toFixed(2)}`}
-          </div>
+      <Avatar name={person.name} size={42} ring />
+      <div style={styles.cardBody}>
+        <div style={styles.cardTop}>
+          <span style={styles.name}>{person.name}</span>
+          <span style={{ ...styles.amount, color }}>
+            {isPos ? '+' : isNeg ? '-' : ''}${Math.abs(balance).toFixed(2)}
+          </span>
         </div>
-      </div>
-      <div style={styles.barWrap}>
-        <div
-          style={{
-            ...styles.bar,
-            width: `${(pct * 100).toFixed(1)}%`,
-            background: dimColor,
-            borderRight: `3px solid ${color}`,
-          }}
-        />
-      </div>
-      <div style={{ ...styles.amount, color }}>
-        {balance >= 0 ? '+' : ''}${balance.toFixed(2)}
+        <div style={styles.barRow}>
+          <div style={styles.barTrack}>
+            <div
+              style={{
+                ...styles.barFill,
+                width: `${(pct * 100).toFixed(1)}%`,
+                background: `linear-gradient(90deg, ${gradStart}, ${gradEnd})`,
+                boxShadow: isPos
+                  ? '0 0 8px rgba(52,211,153,0.4)'
+                  : isNeg
+                  ? '0 0 8px rgba(248,113,113,0.4)'
+                  : 'none',
+              }}
+            />
+          </div>
+          <span
+            style={{
+              ...styles.labelChip,
+              background: dimBg,
+              color,
+              border: `1px solid ${isPos ? 'rgba(52,211,153,0.2)' : isNeg ? 'rgba(248,113,113,0.2)' : 'rgba(255,255,255,0.08)'}`,
+            }}
+          >
+            {label}
+          </span>
+        </div>
       </div>
     </div>
   )
@@ -92,57 +94,92 @@ const styles = {
   cards: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 8,
+    gap: 10,
   },
   card: {
-    background: 'var(--surface)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius)',
-    padding: '14px 16px',
     display: 'flex',
     alignItems: 'center',
     gap: 14,
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.07)',
+    borderRadius: 'var(--radius)',
+    padding: '16px 18px',
   },
-  cardLeft: {
+  cardBody: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+    minWidth: 0,
+  },
+  cardTop: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  name: { fontSize: 15, fontWeight: 600, color: 'var(--text)' },
+  amount: {
+    fontSize: 18,
+    fontWeight: 800,
+    fontVariantNumeric: 'tabular-nums',
+    letterSpacing: '-0.5px',
+  },
+  barRow: {
     display: 'flex',
     alignItems: 'center',
     gap: 10,
-    width: 180,
-    flexShrink: 0,
   },
-  name: { fontSize: 14, fontWeight: 600 },
-  barWrap: {
+  barTrack: {
     flex: 1,
-    height: 20,
-    background: 'var(--surface2)',
-    borderRadius: 6,
+    height: 6,
+    background: 'rgba(255,255,255,0.06)',
+    borderRadius: 99,
     overflow: 'hidden',
-    position: 'relative',
   },
-  bar: {
+  barFill: {
     height: '100%',
-    borderRadius: 6,
+    borderRadius: 99,
     minWidth: 4,
-    transition: 'width 0.3s ease',
+    transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
   },
-  amount: {
-    fontSize: 16,
-    fontWeight: 700,
-    fontVariantNumeric: 'tabular-nums',
-    minWidth: 80,
-    textAlign: 'right',
+  labelChip: {
+    fontSize: 11,
+    fontWeight: 600,
+    padding: '3px 9px',
+    borderRadius: 99,
     flexShrink: 0,
+    textTransform: 'uppercase',
+    letterSpacing: '0.4px',
   },
-  settled: {
+  settledBox: {
     textAlign: 'center',
-    padding: '60px 0',
-  },
-  legend: {
+    padding: '64px 20px',
     display: 'flex',
-    gap: 20,
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 12,
+  },
+  settledEmoji: {
+    fontSize: 48,
+    width: 80,
+    height: 80,
+    display: 'flex',
+    alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 16,
-    fontSize: 12,
+    background: 'var(--green-dim)',
+    border: '1px solid rgba(52,211,153,0.2)',
+    borderRadius: 24,
+    boxShadow: '0 0 24px rgba(52,211,153,0.15)',
+  },
+  settledTitle: {
+    fontSize: 20,
+    fontWeight: 700,
+    color: 'var(--green)',
+  },
+  settledSub: {
+    fontSize: 14,
     color: 'var(--text-muted)',
+    maxWidth: 240,
+    lineHeight: 1.6,
   },
 }

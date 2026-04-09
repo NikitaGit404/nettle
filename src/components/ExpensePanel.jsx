@@ -14,11 +14,6 @@ function getCategoryIcon(id) {
   return CATEGORIES.find((c) => c.id === id)?.icon ?? '📦'
 }
 
-const SPLIT_MODES = [
-  { id: 'equal', label: 'Split equally' },
-  { id: 'custom', label: 'Custom split' },
-]
-
 export default function ExpensePanel({ people, expenses, personById, onAdd, onRemove }) {
   const [showForm, setShowForm] = useState(false)
 
@@ -26,15 +21,24 @@ export default function ExpensePanel({ people, expenses, personById, onAdd, onRe
     return (
       <div style={styles.panel}>
         <SectionHeader title="Expenses" subtitle="Track what was spent and by whom" />
-        <EmptyState icon="👥" message="Add at least 2 people before adding expenses." />
+        <EmptyState icon="👥" message="Add at least 2 people before logging expenses." />
       </div>
     )
   }
 
+  const totalSpend = expenses.reduce((s, e) => s + e.amount, 0)
+
   return (
     <div style={styles.panel}>
       <div style={styles.headerRow}>
-        <SectionHeader title="Expenses" subtitle={`${expenses.length} expense${expenses.length !== 1 ? 's' : ''} recorded`} />
+        <SectionHeader
+          title="Expenses"
+          subtitle={
+            expenses.length > 0
+              ? `${expenses.length} expense${expenses.length !== 1 ? 's' : ''} · $${totalSpend.toFixed(2)} total`
+              : 'No expenses yet'
+          }
+        />
         {!showForm && (
           <button style={styles.newBtn} onClick={() => setShowForm(true)}>
             + Add Expense
@@ -60,23 +64,25 @@ export default function ExpensePanel({ people, expenses, personById, onAdd, onRe
             return (
               <li key={exp.id} style={styles.card}>
                 <div style={styles.cardTop}>
-                  <span style={styles.catIcon}>{getCategoryIcon(exp.category)}</span>
+                  <div style={styles.catIconWrap}>{getCategoryIcon(exp.category)}</div>
                   <div style={styles.cardInfo}>
                     <span style={styles.cardTitle}>{exp.description}</span>
                     <span style={styles.cardMeta}>
-                      Paid by <strong>{payer?.name ?? '?'}</strong> · split {exp.splitAmong.length} way{exp.splitAmong.length !== 1 ? 's' : ''}
+                      Paid by <strong style={{ color: 'var(--text)' }}>{payer?.name ?? '?'}</strong>
+                      <span style={styles.dot}>·</span>
+                      split {exp.splitAmong.length} ways
                     </span>
                   </div>
                   <div style={styles.cardRight}>
                     <span style={styles.cardAmount}>${exp.amount.toFixed(2)}</span>
                     <span style={styles.cardPer}>${perPerson.toFixed(2)}/person</span>
                   </div>
-                  <button style={styles.removeBtn} onClick={() => onRemove(exp.id)} title="Delete expense">✕</button>
+                  <button style={styles.removeBtn} onClick={() => onRemove(exp.id)} title="Delete">✕</button>
                 </div>
                 <div style={styles.cardParticipants}>
                   {exp.splitAmong.map((pid) => (
                     <div key={pid} style={styles.participant}>
-                      <Avatar name={personById[pid]?.name ?? '?'} size={22} />
+                      <Avatar name={personById[pid]?.name ?? '?'} size={20} />
                       <span style={styles.participantName}>{personById[pid]?.name ?? '?'}</span>
                     </div>
                   ))}
@@ -115,342 +121,398 @@ function ExpenseForm({ people, onAdd, onCancel }) {
 
   const totalCustom = Object.values(customAmounts).reduce((s, v) => s + (parseFloat(v) || 0), 0)
   const amountNum = parseFloat(amount) || 0
+  const customOk = splitMode !== 'custom' || Math.abs(totalCustom - amountNum) < 0.01
+
+  const canSubmit = desc.trim() && amountNum > 0 && splitAmong.length > 0 && customOk
 
   function handleSubmit(e) {
     e.preventDefault()
-    if (!desc.trim() || amountNum <= 0 || splitAmong.length === 0) return
-    if (splitMode === 'custom') {
-      const diff = Math.abs(totalCustom - amountNum)
-      if (diff > 0.01) return
-    }
+    if (!canSubmit) return
     onAdd({ description: desc.trim(), amount: amountNum, paidBy, category, splitAmong })
   }
 
-  const canSubmit =
-    desc.trim() &&
-    amountNum > 0 &&
-    splitAmong.length > 0 &&
-    (splitMode === 'equal' || Math.abs(totalCustom - amountNum) < 0.01)
-
   return (
-    <form onSubmit={handleSubmit} style={styles.form}>
-      <div style={styles.formTitle}>New Expense</div>
+    <div style={styles.formCard}>
+      <div style={styles.formHeader}>
+        <span style={styles.formTitle}>New Expense</span>
+        <button style={styles.formClose} onClick={onCancel}>✕</button>
+      </div>
 
-      {/* Description */}
-      <Field label="Description">
-        <input
-          style={styles.input}
-          placeholder="e.g. Dinner at Pizzeria"
-          value={desc}
-          onChange={(e) => setDesc(e.target.value)}
-          autoFocus
-        />
-      </Field>
-
-      {/* Amount + Category */}
-      <div style={styles.row}>
-        <Field label="Amount ($)" style={{ flex: 1 }}>
-          <input
-            style={styles.input}
-            type="number"
-            min="0"
-            step="0.01"
-            placeholder="0.00"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+      <form onSubmit={handleSubmit} style={styles.form}>
+        <Field label="Description">
+          <InputBase
+            placeholder="e.g. Dinner at Pizzeria"
+            value={desc}
+            onChange={(e) => setDesc(e.target.value)}
+            autoFocus
           />
         </Field>
-        <Field label="Category" style={{ flex: 1 }}>
-          <select
-            style={styles.select}
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-          >
-            {CATEGORIES.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.icon} {c.label}
-              </option>
+
+        <div style={styles.row}>
+          <Field label="Amount ($)" style={{ flex: 1 }}>
+            <InputBase
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="0.00"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+            />
+          </Field>
+          <Field label="Category" style={{ flex: 1 }}>
+            <SelectBase value={category} onChange={(e) => setCategory(e.target.value)}>
+              {CATEGORIES.map((c) => (
+                <option key={c.id} value={c.id}>{c.icon} {c.label}</option>
+              ))}
+            </SelectBase>
+          </Field>
+        </div>
+
+        <Field label="Paid by">
+          <SelectBase value={paidBy} onChange={(e) => setPaidBy(e.target.value)}>
+            {people.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
             ))}
-          </select>
+          </SelectBase>
         </Field>
-      </div>
 
-      {/* Paid by */}
-      <Field label="Paid by">
-        <select
-          style={styles.select}
-          value={paidBy}
-          onChange={(e) => setPaidBy(e.target.value)}
-        >
-          {people.map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
-      </Field>
-
-      {/* Split mode */}
-      <Field label="Split">
-        <div style={styles.segmented}>
-          {SPLIT_MODES.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              style={{
-                ...styles.segment,
-                ...(splitMode === m.id ? styles.segmentActive : {}),
-              }}
-              onClick={() => setSplitMode(m.id)}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
-      </Field>
-
-      {/* Split among */}
-      <Field label={splitMode === 'equal' ? 'Split among' : 'Custom amounts'}>
-        <div style={styles.checkList}>
-          {people.map((p) => {
-            const checked = splitAmong.includes(p.id)
-            return (
-              <div key={p.id} style={styles.checkRow}>
-                <label style={styles.checkLabel}>
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => togglePerson(p.id)}
-                  />
-                  <Avatar name={p.name} size={24} />
-                  <span style={{ fontSize: 14 }}>{p.name}</span>
-                </label>
-                {splitMode === 'equal' && checked && amountNum > 0 && (
-                  <span style={styles.shareHint}>
-                    ${(amountNum / splitAmong.length).toFixed(2)}
-                  </span>
-                )}
-                {splitMode === 'custom' && (
-                  <input
-                    style={{ ...styles.input, width: 90, textAlign: 'right' }}
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={customAmounts[p.id]}
-                    onChange={(e) =>
-                      setCustomAmounts((prev) => ({ ...prev, [p.id]: e.target.value }))
-                    }
-                  />
-                )}
-              </div>
-            )
-          })}
-        </div>
-        {splitMode === 'custom' && amountNum > 0 && (
-          <div style={styles.customTotal}>
-            <span>Total assigned:</span>
-            <span
-              style={{
-                fontWeight: 600,
-                color: Math.abs(totalCustom - amountNum) < 0.01 ? 'var(--green)' : 'var(--red)',
-              }}
-            >
-              ${totalCustom.toFixed(2)} / ${amountNum.toFixed(2)}
-            </span>
+        <Field label="Split method">
+          <div style={styles.segmented}>
+            {['equal', 'custom'].map((m) => (
+              <button
+                key={m}
+                type="button"
+                style={{ ...styles.segment, ...(splitMode === m ? styles.segmentActive : {}) }}
+                onClick={() => setSplitMode(m)}
+              >
+                {m === 'equal' ? '⚖️ Split equally' : '✏️ Custom split'}
+              </button>
+            ))}
           </div>
-        )}
-      </Field>
+        </Field>
 
-      <div style={styles.formActions}>
-        <button type="button" style={styles.cancelBtn} onClick={onCancel}>
-          Cancel
-        </button>
-        <button type="submit" style={styles.submitBtn} disabled={!canSubmit}>
-          Add Expense
-        </button>
-      </div>
-    </form>
+        <Field label={splitMode === 'equal' ? 'Split among' : 'Custom amounts'}>
+          <div style={styles.checkList}>
+            {people.map((p) => {
+              const checked = splitAmong.includes(p.id)
+              return (
+                <div key={p.id} style={styles.checkRow}>
+                  <label style={styles.checkLabel}>
+                    <input type="checkbox" checked={checked} onChange={() => togglePerson(p.id)} />
+                    <Avatar name={p.name} size={26} />
+                    <span style={{ fontSize: 14, fontWeight: 500 }}>{p.name}</span>
+                  </label>
+                  {splitMode === 'equal' && checked && amountNum > 0 && (
+                    <span style={styles.shareHint}>
+                      ${(amountNum / splitAmong.length).toFixed(2)}
+                    </span>
+                  )}
+                  {splitMode === 'custom' && (
+                    <input
+                      style={{ ...styles.miniInput }}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={customAmounts[p.id]}
+                      onChange={(e) =>
+                        setCustomAmounts((prev) => ({ ...prev, [p.id]: e.target.value }))
+                      }
+                    />
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          {splitMode === 'custom' && amountNum > 0 && (
+            <div style={styles.customTotal}>
+              <span style={{ color: 'var(--text-muted)' }}>Assigned</span>
+              <span style={{
+                fontWeight: 700,
+                color: Math.abs(totalCustom - amountNum) < 0.01 ? 'var(--green)' : 'var(--red)',
+              }}>
+                ${totalCustom.toFixed(2)} / ${amountNum.toFixed(2)}
+              </span>
+            </div>
+          )}
+        </Field>
+
+        <div style={styles.formActions}>
+          <button type="button" style={styles.cancelBtn} onClick={onCancel}>Cancel</button>
+          <button type="submit" style={{ ...styles.submitBtn, ...(canSubmit ? {} : styles.submitBtnDisabled) }} disabled={!canSubmit}>
+            Add Expense
+          </button>
+        </div>
+      </form>
+    </div>
   )
 }
 
 function Field({ label, children, style }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, ...style }}>
-      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-        {label}
-      </label>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 7, ...style }}>
+      <label style={fieldLabelStyle}>{label}</label>
       {children}
     </div>
   )
 }
 
+const fieldLabelStyle = {
+  fontSize: 11,
+  fontWeight: 600,
+  color: 'var(--text-muted)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.6px',
+}
+
+function InputBase({ ...props }) {
+  const [focused, setFocused] = useState(false)
+  return (
+    <input
+      {...props}
+      style={{
+        background: 'rgba(255,255,255,0.04)',
+        border: `1.5px solid ${focused ? 'rgba(108,99,255,0.5)' : 'rgba(255,255,255,0.08)'}`,
+        boxShadow: focused ? '0 0 0 3px rgba(108,99,255,0.1)' : 'none',
+        borderRadius: 'var(--radius-sm)',
+        padding: '10px 13px',
+        color: 'var(--text)',
+        fontSize: 14,
+        width: '100%',
+        transition: 'all 0.18s ease',
+        ...props.style,
+      }}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+    />
+  )
+}
+
+function SelectBase({ children, ...props }) {
+  return (
+    <select
+      {...props}
+      style={{
+        background: 'rgba(255,255,255,0.04)',
+        border: '1.5px solid rgba(255,255,255,0.08)',
+        borderRadius: 'var(--radius-sm)',
+        padding: '10px 13px',
+        color: 'var(--text)',
+        fontSize: 14,
+        width: '100%',
+        cursor: 'pointer',
+        appearance: 'auto',
+      }}
+    >
+      {children}
+    </select>
+  )
+}
+
 const styles = {
-  panel: { display: 'flex', flexDirection: 'column', gap: 0 },
+  panel: { display: 'flex', flexDirection: 'column' },
   headerRow: {
     display: 'flex',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    marginBottom: 0,
   },
   newBtn: {
-    background: 'var(--accent)',
+    background: 'linear-gradient(135deg, #6c63ff, #a78bfa)',
     color: '#fff',
     borderRadius: 'var(--radius-sm)',
-    padding: '9px 16px',
+    padding: '10px 18px',
     fontSize: 13,
     fontWeight: 600,
-    marginTop: 2,
+    marginTop: 4,
     flexShrink: 0,
+    boxShadow: '0 4px 12px rgba(108,99,255,0.3)',
   },
-  form: {
-    background: 'var(--surface)',
-    border: '1px solid var(--border)',
+  formCard: {
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(108,99,255,0.2)',
     borderRadius: 'var(--radius)',
-    padding: 20,
+    padding: 22,
+    marginBottom: 24,
+    boxShadow: '0 0 0 1px rgba(108,99,255,0.05), 0 8px 32px rgba(0,0,0,0.3)',
+  },
+  formHeader: {
     display: 'flex',
-    flexDirection: 'column',
-    gap: 16,
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 20,
   },
   formTitle: {
     fontSize: 16,
     fontWeight: 700,
     color: 'var(--text)',
-    marginBottom: 4,
   },
-  input: {
-    background: 'var(--surface2)',
-    border: '1.5px solid var(--border)',
-    borderRadius: 'var(--radius-sm)',
-    padding: '9px 12px',
-    color: 'var(--text)',
-    fontSize: 14,
-    width: '100%',
-  },
-  select: {
-    background: 'var(--surface2)',
-    border: '1.5px solid var(--border)',
-    borderRadius: 'var(--radius-sm)',
-    padding: '9px 12px',
-    color: 'var(--text)',
-    fontSize: 14,
-    width: '100%',
-    cursor: 'pointer',
-  },
-  row: {
+  formClose: {
+    background: 'rgba(255,255,255,0.06)',
+    color: 'var(--text-muted)',
+    borderRadius: 7,
+    width: 28,
+    height: 28,
     display: 'flex',
-    gap: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 12,
+    border: '1px solid rgba(255,255,255,0.08)',
   },
+  form: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 16,
+  },
+  row: { display: 'flex', gap: 12 },
   segmented: {
     display: 'flex',
-    background: 'var(--surface2)',
-    border: '1.5px solid var(--border)',
+    background: 'rgba(255,255,255,0.04)',
+    border: '1.5px solid rgba(255,255,255,0.08)',
     borderRadius: 'var(--radius-sm)',
-    overflow: 'hidden',
     padding: 3,
     gap: 3,
   },
   segment: {
     flex: 1,
-    padding: '7px 12px',
+    padding: '8px 10px',
     fontSize: 13,
     fontWeight: 500,
     background: 'transparent',
     color: 'var(--text-muted)',
-    borderRadius: 6,
+    borderRadius: 7,
   },
   segmentActive: {
-    background: 'var(--accent-dim)',
-    color: 'var(--accent-light)',
+    background: 'rgba(108,99,255,0.15)',
+    color: '#c4b5fd',
+    boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
   },
   checkList: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 8,
+    gap: 10,
   },
   checkRow: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
   },
   checkLabel: {
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
+    gap: 9,
     cursor: 'pointer',
     flex: 1,
-    fontSize: 14,
   },
   shareHint: {
-    fontSize: 12,
-    color: 'var(--text-muted)',
+    fontSize: 13,
+    fontWeight: 600,
+    color: 'var(--accent-light)',
     fontVariantNumeric: 'tabular-nums',
+  },
+  miniInput: {
+    background: 'rgba(255,255,255,0.05)',
+    border: '1.5px solid rgba(255,255,255,0.1)',
+    borderRadius: 8,
+    padding: '6px 10px',
+    color: 'var(--text)',
+    fontSize: 13,
+    width: 90,
+    textAlign: 'right',
   },
   customTotal: {
     display: 'flex',
     justifyContent: 'space-between',
     fontSize: 13,
-    color: 'var(--text-muted)',
-    marginTop: 4,
-    padding: '8px 0 0',
-    borderTop: '1px solid var(--border)',
+    marginTop: 8,
+    padding: '10px 0 0',
+    borderTop: '1px solid rgba(255,255,255,0.06)',
   },
   formActions: {
     display: 'flex',
     gap: 10,
     justifyContent: 'flex-end',
+    paddingTop: 4,
   },
   cancelBtn: {
-    background: 'var(--surface2)',
+    background: 'rgba(255,255,255,0.05)',
     color: 'var(--text-muted)',
     borderRadius: 'var(--radius-sm)',
     padding: '10px 18px',
     fontSize: 14,
     fontWeight: 500,
-    border: '1px solid var(--border)',
+    border: '1px solid rgba(255,255,255,0.08)',
   },
   submitBtn: {
-    background: 'var(--accent)',
+    background: 'linear-gradient(135deg, #6c63ff, #a78bfa)',
     color: '#fff',
     borderRadius: 'var(--radius-sm)',
-    padding: '10px 22px',
+    padding: '10px 24px',
     fontSize: 14,
     fontWeight: 600,
+    boxShadow: '0 4px 12px rgba(108,99,255,0.3)',
+  },
+  submitBtnDisabled: {
+    opacity: 0.4,
+    boxShadow: 'none',
   },
   list: {
     listStyle: 'none',
     display: 'flex',
     flexDirection: 'column',
     gap: 10,
+    marginTop: 8,
   },
   card: {
-    background: 'var(--surface)',
-    border: '1px solid var(--border)',
+    background: 'rgba(255,255,255,0.03)',
+    border: '1px solid rgba(255,255,255,0.07)',
     borderRadius: 'var(--radius)',
-    padding: '14px 16px',
+    padding: '15px 16px',
     display: 'flex',
     flexDirection: 'column',
-    gap: 10,
+    gap: 12,
+    transition: 'border-color 0.18s',
   },
   cardTop: {
     display: 'flex',
     alignItems: 'center',
-    gap: 12,
+    gap: 13,
   },
-  catIcon: { fontSize: 22, flexShrink: 0 },
+  catIconWrap: {
+    fontSize: 22,
+    width: 42,
+    height: 42,
+    background: 'rgba(255,255,255,0.05)',
+    border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: 12,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
   cardInfo: {
     flex: 1,
     display: 'flex',
     flexDirection: 'column',
-    gap: 3,
+    gap: 4,
+    minWidth: 0,
   },
-  cardTitle: { fontSize: 15, fontWeight: 600, color: 'var(--text)' },
+  cardTitle: {
+    fontSize: 15,
+    fontWeight: 600,
+    color: 'var(--text)',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
   cardMeta: { fontSize: 12, color: 'var(--text-muted)' },
+  dot: { margin: '0 6px', opacity: 0.4 },
   cardRight: {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'flex-end',
-    gap: 2,
+    gap: 3,
+    flexShrink: 0,
   },
   cardAmount: {
     fontSize: 18,
@@ -458,29 +520,38 @@ const styles = {
     color: 'var(--text)',
     fontVariantNumeric: 'tabular-nums',
   },
-  cardPer: { fontSize: 11, color: 'var(--text-muted)' },
+  cardPer: {
+    fontSize: 11,
+    color: 'var(--text-muted)',
+    fontVariantNumeric: 'tabular-nums',
+  },
   removeBtn: {
     background: 'transparent',
     color: 'var(--text-dim)',
-    fontSize: 13,
-    padding: '4px 6px',
-    borderRadius: 6,
+    fontSize: 12,
+    padding: '5px 6px',
+    borderRadius: 7,
     flexShrink: 0,
   },
   cardParticipants: {
     display: 'flex',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 7,
     paddingTop: 10,
-    borderTop: '1px solid var(--border)',
+    borderTop: '1px solid rgba(255,255,255,0.05)',
   },
   participant: {
     display: 'flex',
     alignItems: 'center',
-    gap: 5,
-    background: 'var(--surface2)',
+    gap: 6,
+    background: 'rgba(255,255,255,0.04)',
+    border: '1px solid rgba(255,255,255,0.07)',
     borderRadius: 99,
-    padding: '3px 10px 3px 4px',
+    padding: '3px 10px 3px 5px',
   },
-  participantName: { fontSize: 12, color: 'var(--text-muted)' },
+  participantName: {
+    fontSize: 12,
+    color: 'var(--text-muted)',
+    fontWeight: 500,
+  },
 }
